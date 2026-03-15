@@ -1,7 +1,7 @@
 // lib/data/remote/quran_api_service.dart
 // خدمة Quran.Foundation API — بدون مصادقة
-// Base URL: https://api.qurancdn.com/api/qdc
-// Endpoint: GET /verses/by_page/{page}?fields=text_uthmani,text_imlaei&word_fields=text_uthmani,text_imlaei,page_number,line_number,char_type_name
+// Base: https://api.qurancdn.com/api/qdc
+// المعامل الصحيح لجلب الكلمات: words=true
 
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
@@ -11,7 +11,7 @@ import '../models/quran_word.dart';
 class QuranApiService {
   // ─── ثوابت ───────────────────────────────────────────────
   static const String _baseUrl = 'https://api.qurancdn.com/api/qdc';
-  static const Duration _timeout = Duration(seconds: 20);
+  static const Duration _timeout = Duration(seconds: 25);
   static const int _maxRetries = 3;
 
   // Singleton
@@ -19,98 +19,108 @@ class QuranApiService {
   factory QuranApiService() => _instance;
   QuranApiService._();
 
-  // ─── HTTP client (قابل للاستبدال في الاختبارات) ──────────
   final http.Client _client = http.Client();
 
   // ═══════════════════════════════════════════════════════════
   // جلب كلمات صفحة كاملة
+  //   words=true        → يُرجع مصفوفة words داخل كل آية
+  //   word_fields=...   → يُحدد الحقول المطلوبة داخل كل كلمة
   // ═══════════════════════════════════════════════════════════
   Future<List<QuranWord>> fetchPageWords(int pageNumber) async {
     if (pageNumber < 1 || pageNumber > 604) {
-      throw ArgumentError('رقم الصفحة يجب أن يكون بين 1 و 604');
+      throw ArgumentError('رقم الصفحة يجب بين 1 و 604');
     }
 
     final uri = Uri.parse(
       '$_baseUrl/verses/by_page/$pageNumber'
-      '?fields=text_uthmani,text_imlaei'
+      '?words=true'
       '&word_fields=text_uthmani,text_imlaei,page_number,line_number,char_type_name'
-      '&per_page=50'
-      '&page=1',
+      '&fields=text_uthmani'
+      '&per_page=50',
     );
 
-    if (kDebugMode) debugPrint('📡 QuranAPI → $uri');
+    if (kDebugMode) debugPrint('📡 QuranAPI page → $uri');
 
     Exception? lastError;
     for (int attempt = 1; attempt <= _maxRetries; attempt++) {
       try {
         final response = await _client.get(uri).timeout(_timeout);
-
         if (response.statusCode == 200) {
           final data = json.decode(response.body) as Map<String, dynamic>;
-          final words = _parseResponse(data, pageNumber);
+          final words = _parseResponse(data, defaultPage: pageNumber);
           if (kDebugMode) {
             debugPrint(
-              '✅ QuranAPI page $pageNumber → ${words.length} words (attempt $attempt)',
+              '✅ page $pageNumber → ${words.length} words (attempt $attempt)',
             );
           }
           return words;
-        } else {
-          lastError = Exception(
-            'HTTP ${response.statusCode}: ${response.reasonPhrase}',
-          );
-          if (kDebugMode) {
-            debugPrint(
-              '⚠️  QuranAPI attempt $attempt failed: ${response.statusCode}',
-            );
-          }
+        }
+        lastError = Exception('HTTP ${response.statusCode}');
+        if (kDebugMode) {
+          debugPrint('⚠️ attempt $attempt: ${response.statusCode}');
         }
       } catch (e) {
-        lastError = Exception('Network error: $e');
-        if (kDebugMode) {
-          debugPrint('⚠️  QuranAPI attempt $attempt exception: $e');
-        }
+        lastError = Exception('Network: $e');
+        if (kDebugMode) debugPrint('⚠️ attempt $attempt exception: $e');
         if (attempt < _maxRetries) {
-          await Future.delayed(Duration(milliseconds: 500 * attempt));
+          await Future.delayed(Duration(milliseconds: 600 * attempt));
         }
       }
     }
-    throw lastError ?? Exception('فشل جلب بيانات الصفحة $pageNumber');
+    throw lastError ?? Exception('فشل جلب الصفحة $pageNumber');
   }
 
   // ═══════════════════════════════════════════════════════════
-  // جلب كلمات سورة كاملة (بجمع الصفحات المتعددة)
+  // جلب كلمات سورة كاملة
   // ═══════════════════════════════════════════════════════════
   Future<List<QuranWord>> fetchSuraWords(int suraNumber) async {
     if (suraNumber < 1 || suraNumber > 114) {
-      throw ArgumentError('رقم السورة يجب أن يكون بين 1 و 114');
+      throw ArgumentError('رقم السورة يجب بين 1 و 114');
     }
 
     final uri = Uri.parse(
       '$_baseUrl/verses/by_chapter/$suraNumber'
-      '?fields=text_uthmani,text_imlaei'
+      '?words=true'
       '&word_fields=text_uthmani,text_imlaei,page_number,line_number,char_type_name'
-      '&per_page=286'
-      '&page=1',
+      '&fields=text_uthmani'
+      '&per_page=286',
     );
 
     if (kDebugMode) debugPrint('📡 QuranAPI sura $suraNumber → $uri');
 
-    final response = await _client.get(uri).timeout(_timeout);
-    if (response.statusCode != 200) {
-      throw Exception('HTTP ${response.statusCode} for sura $suraNumber');
+    Exception? lastError;
+    for (int attempt = 1; attempt <= _maxRetries; attempt++) {
+      try {
+        final response = await _client.get(uri).timeout(_timeout);
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body) as Map<String, dynamic>;
+          final words = _parseResponse(data, defaultPage: null);
+          if (kDebugMode) {
+            debugPrint('✅ sura $suraNumber → ${words.length} words');
+          }
+          return words;
+        }
+        lastError = Exception('HTTP ${response.statusCode}');
+      } catch (e) {
+        lastError = Exception('Network: $e');
+        if (attempt < _maxRetries) {
+          await Future.delayed(Duration(milliseconds: 600 * attempt));
+        }
+      }
     }
-
-    final data = json.decode(response.body) as Map<String, dynamic>;
-    return _parseResponse(data, null);
+    throw lastError ?? Exception('فشل جلب السورة $suraNumber');
   }
 
   // ═══════════════════════════════════════════════════════════
   // تحليل استجابة JSON → List<QuranWord>
+  //
+  //  مسار أساسي: verse.words[] — كلمة بكلمة مع page_number / line_number
+  //  مسار بديل:  verse.text_uthmani — تقسيم بالمسافة (حال غياب words)
   // ═══════════════════════════════════════════════════════════
   List<QuranWord> _parseResponse(
-    Map<String, dynamic> data,
-    int? defaultPage,
-  ) {
+    Map<String, dynamic> data, {
+    required int? defaultPage,
+  }) {
     final verses = data['verses'] as List<dynamic>? ?? [];
     final result = <QuranWord>[];
     int globalId = 1;
@@ -122,62 +132,77 @@ class QuranApiService {
       final suraNum = int.tryParse(parts.isNotEmpty ? parts[0] : '0') ?? 0;
       final ayaNum = int.tryParse(parts.length > 1 ? parts[1] : '0') ?? 0;
 
-      final wordsJson = verse['words'] as List<dynamic>? ?? [];
-      final wordCount = wordsJson.length;
+      final versePageNum =
+          verse['page_number'] as int? ?? defaultPage ?? 1;
 
-      for (int i = 0; i < wordCount; i++) {
-        final w = wordsJson[i] as Map<String, dynamic>;
+      // ── مسار أساسي: words array ──────────────────────────
+      final wordsJson = verse['words'] as List<dynamic>?;
 
-        // تصفية العلامات (verse_end, end) — نأخذ word فقط
-        final charType = w['char_type_name'] as String? ?? 'word';
-        if (charType == 'end') continue;
+      if (wordsJson != null && wordsJson.isNotEmpty) {
+        // اجمع كلمات النوع "word" فقط (تجاهل "end" و "pause")
+        final wordTokens = wordsJson
+            .cast<Map<String, dynamic>>()
+            .where((w) => (w['char_type_name'] as String? ?? 'word') == 'word')
+            .toList();
 
-        final textUthmani = w['text_uthmani'] as String? ??
-            w['text'] as String? ??
-            '';
-        if (textUthmani.isEmpty) continue;
+        for (int i = 0; i < wordTokens.length; i++) {
+          final w = wordTokens[i];
+          final textUthmani =
+              (w['text_uthmani'] as String? ?? w['text'] as String? ?? '')
+                  .trim();
+          if (textUthmani.isEmpty) continue;
 
-        final textImlaei = w['text_imlaei'] as String? ?? '';
-        final pageNum = w['page_number'] as int? ??
-            defaultPage ??
-            1;
-        final lineNum = w['line_number'] as int? ?? 1;
+          final textImlaei =
+              (w['text_imlaei'] as String? ?? '').trim();
+          final pageNum = w['page_number'] as int? ?? versePageNum;
+          final lineNum = w['line_number'] as int? ?? 1;
 
-        // هل هذه آخر كلمة (word) في الآية؟
-        bool isLast = false;
-        if (i == wordCount - 1) {
-          isLast = true;
-        } else {
-          // قد يكون العنصر التالي علامة "end" — نعتبر هذه الكلمة آخر كلمة
-          final nextType =
-              (wordsJson[i + 1] as Map<String, dynamic>)['char_type_name']
-                  as String? ??
-              'word';
-          isLast = nextType == 'end';
+          result.add(QuranWord(
+            id: globalId++,
+            verseKey: verseKey,
+            suraNumber: suraNum,
+            ayaNumber: ayaNum,
+            wordPosition: i,
+            textUthmani: textUthmani,
+            textSimple: textImlaei.isNotEmpty
+                ? textImlaei
+                : _removeDiacritics(textUthmani),
+            pageNumber: pageNum,
+            lineNumber: lineNum,
+            isLastInAya: i == wordTokens.length - 1,
+          ));
         }
+      } else {
+        // ── مسار بديل: قسّم نص الآية بالمسافة ───────────────
+        final verseText =
+            (verse['text_uthmani'] as String? ?? '').trim();
+        if (verseText.isEmpty) continue;
 
-        result.add(QuranWord(
-          id: globalId++,
-          verseKey: verseKey,
-          suraNumber: suraNum,
-          ayaNumber: ayaNum,
-          wordPosition: i,
-          textUthmani: textUthmani,
-          textSimple: textImlaei.isNotEmpty
-              ? textImlaei
-              : _removeArabicDiacritics(textUthmani),
-          pageNumber: pageNum,
-          lineNumber: lineNum,
-          isLastInAya: isLast,
-        ));
+        final tokens =
+            verseText.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+
+        for (int i = 0; i < tokens.length; i++) {
+          result.add(QuranWord(
+            id: globalId++,
+            verseKey: verseKey,
+            suraNumber: suraNum,
+            ayaNumber: ayaNum,
+            wordPosition: i,
+            textUthmani: tokens[i],
+            textSimple: _removeDiacritics(tokens[i]),
+            pageNumber: versePageNum,
+            lineNumber: 1,
+            isLastInAya: i == tokens.length - 1,
+          ));
+        }
       }
     }
 
     return result;
   }
 
-  // ─── مساعد: إزالة التشكيل ───────────────────────────────
-  static String _removeArabicDiacritics(String text) {
+  // ─── مساعد: إزالة التشكيل ────────────────────────────────
+  static String _removeDiacritics(String text) {
     return text.replaceAll(
       RegExp(
         r'[\u064B-\u065F\u0670\u0610-\u061A\u06D6-\u06DC\u06DF-\u06E4\u06E7-\u06E8\u06EA-\u06ED]',

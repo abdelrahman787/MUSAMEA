@@ -129,6 +129,7 @@ class _QuranWordChipState extends State<QuranWordChip>
         widget.word,
         style: TextStyle(
           fontFamily: 'AmiriQuran',
+          fontFamilyFallback: const ['Amiri', 'serif'],
           fontSize: widget.fontSize,
           color: Colors.transparent,
           height: 2.0,
@@ -161,6 +162,7 @@ class _QuranWordChipState extends State<QuranWordChip>
         '؟',
         style: TextStyle(
           fontFamily: 'AmiriQuran',
+          fontFamilyFallback: const ['Amiri', 'serif'],
           fontSize: widget.fontSize * 0.8,
           color: AppColors.primary,
           height: 2.0,
@@ -201,6 +203,7 @@ class _QuranWordChipState extends State<QuranWordChip>
         widget.word,
         style: TextStyle(
           fontFamily: 'AmiriQuran',
+          fontFamilyFallback: const ['Amiri', 'serif'],
           fontSize: widget.fontSize,
           color: textColor,
           height: 2.0,
@@ -221,6 +224,7 @@ class _QuranWordChipState extends State<QuranWordChip>
         widget.word,
         style: TextStyle(
           fontFamily: 'AmiriQuran',
+          fontFamilyFallback: const ['Amiri', 'serif'],
           fontSize: widget.fontSize,
           color: AppColors.wordHint.withValues(alpha: 0.5),
           height: 2.0,

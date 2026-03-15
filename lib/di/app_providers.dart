@@ -1,4 +1,5 @@
 // lib/di/app_providers.dart
+// حقن التبعيات — يختار محرك ASR المناسب تلقائياً
 
 import 'package:flutter/foundation.dart';
 import '../data/local/db/quran_database.dart';
@@ -27,13 +28,49 @@ class AppDependencies {
   Future<void> initialize() async {
     if (_initialized) return;
 
-    asrEngine = kDebugMode
-        ? MockASREngine()
-        : GoogleSpeechEngine();
+    // على الويب: استخدم المحاكاة (speech_to_text لا يدعم الويب بالكامل)
+    if (kIsWeb) {
+      asrEngine = MockASREngine();
+      await asrEngine.initialize();
+      if (kDebugMode) debugPrint('🌐 Web: using MockASREngine');
+    } else if (kDebugMode) {
+      // في وضع التطوير: جرّب المحرك الحقيقي أولاً
+      final realEngine = SpeechToTextEngine();
+      final ready = await realEngine.initialize();
+      if (ready) {
+        // تحقق من دعم العربية
+        final hasArabic = await realEngine.supportsArabic();
+        if (hasArabic) {
+          asrEngine = realEngine;
+          if (kDebugMode) debugPrint('✅ Debug: using SpeechToTextEngine (ar-SA)');
+        } else {
+          await realEngine.dispose();
+          asrEngine = FallbackASREngine();
+          await asrEngine.initialize();
+          if (kDebugMode) debugPrint('⚠️ Debug: Arabic not supported, using FallbackASREngine');
+        }
+      } else {
+        await realEngine.dispose();
+        asrEngine = MockASREngine();
+        await asrEngine.initialize();
+        if (kDebugMode) debugPrint('⚠️ Debug: STT unavailable, using MockASREngine');
+      }
+    } else {
+      // في الإنتاج: المحرك الحقيقي
+      final realEngine = SpeechToTextEngine();
+      final ready = await realEngine.initialize();
+      if (ready) {
+        asrEngine = realEngine;
+      } else {
+        await realEngine.dispose();
+        // fallback للهواتف التي لا تدعم ar-SA
+        final fallback = FallbackASREngine();
+        await fallback.initialize();
+        asrEngine = fallback;
+      }
+    }
 
-    await asrEngine.initialize();
     _initialized = true;
-
     if (kDebugMode) {
       debugPrint('✅ AppDependencies initialized: ${asrEngine.engineName}');
     }
@@ -45,5 +82,6 @@ class AppDependencies {
     await quranDb.close();
     await appDb.close();
     _initialized = false;
+    _instance = null;
   }
 }

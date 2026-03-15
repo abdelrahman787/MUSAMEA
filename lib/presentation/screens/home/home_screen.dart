@@ -237,6 +237,7 @@ class _WelcomeCard extends StatelessWidget {
             'بِسۡمِ ٱللَّهِ ٱلرَّحۡمَٰنِ ٱلرَّحِيمِ',
             style: TextStyle(
               fontFamily: 'AmiriQuran',
+              fontFamilyFallback: ['Amiri', 'serif'],
               fontSize: 22,
               color: Colors.white,
               height: 2.0,

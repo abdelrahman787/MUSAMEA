@@ -45,7 +45,7 @@ class ArabicNormalizer {
   /// توحيد الهاء والتاء المربوطة
   static String normalizeTaMarbuta(String text) {
     // فقط في نهاية الكلمة
-    return text.replaceAll(RegExp('[\u0629](?=\s|\$)'), '\u0647');
+    return text.replaceAll(RegExp(r'[ة](?=\s|$)'), 'ه');
   }
 
   /// توحيد الهمزة

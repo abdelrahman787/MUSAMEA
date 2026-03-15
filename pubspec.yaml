@@ -41,8 +41,8 @@ dependencies:
   # Arabic Text
   google_fonts: ^6.2.1
 
-  # Quran Data (complete 114 suras, 6236 verses)
-  quran: ^1.3.3
+  # HTTP Advanced Client (Quran.Foundation API)
+  dio: ^5.4.0
 
   # Speech Recognition (real ASR)
   speech_to_text: ^7.0.0

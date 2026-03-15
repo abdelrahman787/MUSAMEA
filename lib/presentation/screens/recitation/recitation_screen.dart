@@ -205,7 +205,40 @@ class _MushafArea extends StatelessWidget {
   Widget build(BuildContext context) {
     final page = state.currentPage;
     if (page == null) {
-      return const Center(child: CircularProgressIndicator());
+      return Container(
+        decoration: const BoxDecoration(
+          gradient: AppColors.mushafahBackground,
+        ),
+        child: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(
+                color: AppColors.primary,
+                strokeWidth: 3,
+              ),
+              SizedBox(height: 16),
+              Text(
+                'جاري تحميل الصفحة…',
+                style: TextStyle(
+                  fontFamily: 'Amiri',
+                  fontSize: 18,
+                  color: AppColors.primary,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'يتم جلب البيانات من الخادم',
+                style: TextStyle(
+                  fontFamily: 'Amiri',
+                  fontSize: 13,
+                  color: AppColors.textHint,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
     }
 
     return Container(

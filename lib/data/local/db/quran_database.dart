@@ -1,198 +1,385 @@
 // lib/data/local/db/quran_database.dart
-// بيانات القرآن الكامل — مباشرة من مكتبة quran (114 سورة، 6236 آية)
-// لا تحتاج قاعدة بيانات خارجية — البيانات مُضمَّنة في الحزمة
+// ─── استراتيجية Cache-First ───────────────────────────────────────────────
+// 1. عند أول طلب لصفحة: جلب البيانات من Quran.Foundation API وتخزينها في SQLite
+// 2. عند الطلبات اللاحقة: قراءة البيانات من SQLite مباشرة (لا إنترنت مطلوب)
+// 3. TTL: 30 يوماً — بعدها يُعاد الجلب من الـ API تلقائياً
+// ─────────────────────────────────────────────────────────────────────────
 
 import 'package:flutter/foundation.dart';
-import 'package:quran/quran.dart' as quran_lib;
+import 'package:path/path.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:sqflite/sqflite.dart';
 import '../../models/quran_word.dart';
+import '../../remote/quran_api_service.dart';
 import '../../../core/extensions/string_extensions.dart';
 
 class QuranDatabase {
+  // ─── Singleton ───────────────────────────────────────────
   static QuranDatabase? _instance;
-
   QuranDatabase._();
-
   static QuranDatabase get instance {
     _instance ??= QuranDatabase._();
     return _instance!;
   }
 
-  // ═══════════════ طرق استرجاع البيانات ═══════════════
+  // ─── ثوابت ───────────────────────────────────────────────
+  static const String _dbName = 'quran_cache_v3.db';
+  static const int _dbVersion = 3;
+  static const int _cacheTtlDays = 30;
+  static const int _totalPages = 604;
+  static const int _totalSuras = 114;
 
-  /// كلمات صفحة كاملة — مباشرة من المكتبة
+  // ─── الحالة الداخلية ──────────────────────────────────────
+  Database? _db;
+  final QuranApiService _api = QuranApiService();
+
+  // ═══════════════════════════════════════════════════════════
+  // فتح / إنشاء قاعدة البيانات
+  // ═══════════════════════════════════════════════════════════
+  Future<Database> _getDb() async {
+    if (_db != null) return _db!;
+    final dir = await getApplicationDocumentsDirectory();
+    final path = join(dir.path, _dbName);
+
+    _db = await openDatabase(
+      path,
+      version: _dbVersion,
+      onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
+    );
+    return _db!;
+  }
+
+  Future<void> _onCreate(Database db, int version) async {
+    await db.execute('''
+      CREATE TABLE words (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        verse_key       TEXT NOT NULL,
+        sura_number     INTEGER NOT NULL,
+        aya_number      INTEGER NOT NULL,
+        word_position   INTEGER NOT NULL,
+        text_uthmani    TEXT NOT NULL,
+        text_simple     TEXT NOT NULL,
+        page_number     INTEGER NOT NULL,
+        line_number     INTEGER NOT NULL DEFAULT 1,
+        is_last_in_aya  INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX idx_sura_aya ON words (sura_number, aya_number)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_page ON words (page_number)',
+    );
+
+    await db.execute('''
+      CREATE TABLE cached_pages (
+        page_number   INTEGER PRIMARY KEY,
+        cached_at     INTEGER NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE cached_suras (
+        sura_number   INTEGER PRIMARY KEY,
+        cached_at     INTEGER NOT NULL
+      )
+    ''');
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    // إسقاط وإعادة إنشاء الجداول عند الترقية
+    await db.execute('DROP TABLE IF EXISTS words');
+    await db.execute('DROP TABLE IF EXISTS cached_pages');
+    await db.execute('DROP TABLE IF EXISTS cached_suras');
+    await _onCreate(db, newVersion);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // فحص صلاحية الـ Cache
+  // ═══════════════════════════════════════════════════════════
+  bool _isCacheExpired(int cachedAtMs) {
+    final age = DateTime.now().millisecondsSinceEpoch - cachedAtMs;
+    return age > (_cacheTtlDays * 24 * 3600 * 1000);
+  }
+
+  Future<bool> _isPageCached(Database db, int pageNumber) async {
+    final rows = await db.query(
+      'cached_pages',
+      where: 'page_number = ?',
+      whereArgs: [pageNumber],
+    );
+    if (rows.isEmpty) return false;
+    final cachedAt = rows.first['cached_at'] as int;
+    return !_isCacheExpired(cachedAt);
+  }
+
+  Future<bool> _isSuraCached(Database db, int suraNumber) async {
+    final rows = await db.query(
+      'cached_suras',
+      where: 'sura_number = ?',
+      whereArgs: [suraNumber],
+    );
+    if (rows.isEmpty) return false;
+    final cachedAt = rows.first['cached_at'] as int;
+    return !_isCacheExpired(cachedAt);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // تخزين كلمات في الـ Cache
+  // ═══════════════════════════════════════════════════════════
+  Future<void> _cachePageWords(
+    Database db,
+    int pageNumber,
+    List<QuranWord> words,
+  ) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    await db.transaction((txn) async {
+      // حذف البيانات القديمة لهذه الصفحة
+      await txn.delete(
+        'words',
+        where: 'page_number = ?',
+        whereArgs: [pageNumber],
+      );
+
+      // إدراج الكلمات الجديدة
+      final batch = txn.batch();
+      for (final word in words) {
+        batch.insert('words', word.toMap()..remove('id'));
+      }
+      await batch.commit(noResult: true);
+
+      // تسجيل الصفحة في الـ cache
+      await txn.insert(
+        'cached_pages',
+        {'page_number': pageNumber, 'cached_at': now},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    });
+
+    if (kDebugMode) {
+      debugPrint(
+        '💾 Cache saved: page $pageNumber (${words.length} words)',
+      );
+    }
+  }
+
+  Future<void> _cacheSuraWords(
+    Database db,
+    int suraNumber,
+    List<QuranWord> words,
+  ) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    await db.transaction((txn) async {
+      await txn.delete(
+        'words',
+        where: 'sura_number = ?',
+        whereArgs: [suraNumber],
+      );
+      final batch = txn.batch();
+      for (final word in words) {
+        batch.insert('words', word.toMap()..remove('id'));
+      }
+      await batch.commit(noResult: true);
+
+      await txn.insert(
+        'cached_suras',
+        {'sura_number': suraNumber, 'cached_at': now},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    });
+
+    if (kDebugMode) {
+      debugPrint(
+        '💾 Cache saved: sura $suraNumber (${words.length} words)',
+      );
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // getPageWords — cache-first ثم API
+  // ═══════════════════════════════════════════════════════════
   Future<List<QuranWord>> getPageWords(int pageNumber) async {
-    if (pageNumber < 1 || pageNumber > quran_lib.totalPagesCount) {
-      return [];
-    }
-    final result = <QuranWord>[];
-    try {
-      final pageData = quran_lib.getPageData(pageNumber);
+    if (pageNumber < 1 || pageNumber > _totalPages) return [];
 
-      for (final surahData in pageData) {
-        final surahNumber = surahData['surah'] as int;
-        final startVerse = surahData['start'] as int;
-        final endVerse = surahData['end'] as int;
+    final db = await _getDb();
 
-        for (int ayaNum = startVerse; ayaNum <= endVerse; ayaNum++) {
-          final verseText =
-              quran_lib.getVerse(surahNumber, ayaNum, verseEndSymbol: false);
-          final words = verseText.trim().split(RegExp(r'\s+'));
-
-          for (int i = 0; i < words.length; i++) {
-            final word = words[i].trim();
-            if (word.isEmpty) continue;
-
-            result.add(QuranWord(
-              id: result.length + 1,
-              verseKey: '$surahNumber:$ayaNum',
-              suraNumber: surahNumber,
-              ayaNumber: ayaNum,
-              wordPosition: i,
-              textUthmani: word,
-              textSimple: _removeArabicDiacritics(word),
-              pageNumber: pageNumber,
-              lineNumber: 1,
-              isLastInAya: i == words.length - 1,
-            ));
-          }
+    // ١. تحقق من الـ Cache
+    if (await _isPageCached(db, pageNumber)) {
+      final rows = await db.query(
+        'words',
+        where: 'page_number = ?',
+        whereArgs: [pageNumber],
+        orderBy: 'sura_number, aya_number, word_position',
+      );
+      if (rows.isNotEmpty) {
+        if (kDebugMode) {
+          debugPrint(
+            '📦 Cache hit: page $pageNumber (${rows.length} words)',
+          );
         }
+        return rows.map(QuranWord.fromMap).toList();
+      }
+    }
+
+    // ٢. جلب من API
+    try {
+      if (kDebugMode) debugPrint('🌐 API fetch: page $pageNumber');
+      final words = await _api.fetchPageWords(pageNumber);
+      if (words.isNotEmpty) {
+        await _cachePageWords(db, pageNumber, words);
+        return words;
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('❌ getPageWords($pageNumber) error: $e');
+      if (kDebugMode) debugPrint('❌ API error for page $pageNumber: $e');
     }
-    return result;
+
+    // ٣. محاولة من الـ cache حتى لو انتهى TTL
+    final fallback = await db.query(
+      'words',
+      where: 'page_number = ?',
+      whereArgs: [pageNumber],
+      orderBy: 'sura_number, aya_number, word_position',
+    );
+    return fallback.map(QuranWord.fromMap).toList();
   }
 
-  /// كلمات سورة كاملة
+  // ═══════════════════════════════════════════════════════════
+  // getSuraWords — cache-first ثم API
+  // ═══════════════════════════════════════════════════════════
   Future<List<QuranWord>> getSuraWords(int suraNumber) async {
-    if (suraNumber < 1 || suraNumber > quran_lib.totalSurahCount) return [];
-    final result = <QuranWord>[];
-    try {
-      final verseCount = quran_lib.getVerseCount(suraNumber);
-      for (int ayaNum = 1; ayaNum <= verseCount; ayaNum++) {
-        final verseText =
-            quran_lib.getVerse(suraNumber, ayaNum, verseEndSymbol: false);
-        final words = verseText.trim().split(RegExp(r'\s+'));
-        final pageNum = quran_lib.getPageNumber(suraNumber, ayaNum);
+    if (suraNumber < 1 || suraNumber > _totalSuras) return [];
 
-        for (int i = 0; i < words.length; i++) {
-          final word = words[i].trim();
-          if (word.isEmpty) continue;
-          result.add(QuranWord(
-            id: result.length + 1,
-            verseKey: '$suraNumber:$ayaNum',
-            suraNumber: suraNumber,
-            ayaNumber: ayaNum,
-            wordPosition: i,
-            textUthmani: word,
-            textSimple: _removeArabicDiacritics(word),
-            pageNumber: pageNum,
-            lineNumber: 1,
-            isLastInAya: i == words.length - 1,
-          ));
+    final db = await _getDb();
+
+    if (await _isSuraCached(db, suraNumber)) {
+      final rows = await db.query(
+        'words',
+        where: 'sura_number = ?',
+        whereArgs: [suraNumber],
+        orderBy: 'aya_number, word_position',
+      );
+      if (rows.isNotEmpty) {
+        if (kDebugMode) {
+          debugPrint(
+            '📦 Cache hit: sura $suraNumber (${rows.length} words)',
+          );
         }
+        return rows.map(QuranWord.fromMap).toList();
       }
-    } catch (e) {
-      if (kDebugMode) debugPrint('❌ getSuraWords($suraNumber) error: $e');
     }
-    return result;
-  }
 
-  /// كلمات آية معينة
-  Future<List<QuranWord>> getVerseWords(int suraNumber, int ayaNumber) async {
-    final result = <QuranWord>[];
     try {
-      final verseText =
-          quran_lib.getVerse(suraNumber, ayaNumber, verseEndSymbol: false);
-      final words = verseText.trim().split(RegExp(r'\s+'));
-      final pageNum = quran_lib.getPageNumber(suraNumber, ayaNumber);
-
-      for (int i = 0; i < words.length; i++) {
-        final word = words[i].trim();
-        if (word.isEmpty) continue;
-        result.add(QuranWord(
-          id: i + 1,
-          verseKey: '$suraNumber:$ayaNumber',
-          suraNumber: suraNumber,
-          ayaNumber: ayaNumber,
-          wordPosition: i,
-          textUthmani: word,
-          textSimple: _removeArabicDiacritics(word),
-          pageNumber: pageNum,
-          lineNumber: 1,
-          isLastInAya: i == words.length - 1,
-        ));
+      if (kDebugMode) debugPrint('🌐 API fetch: sura $suraNumber');
+      final words = await _api.fetchSuraWords(suraNumber);
+      if (words.isNotEmpty) {
+        await _cacheSuraWords(db, suraNumber, words);
+        return words;
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('❌ getVerseWords error: $e');
+      if (kDebugMode) debugPrint('❌ API error for sura $suraNumber: $e');
     }
-    return result;
+
+    final fallback = await db.query(
+      'words',
+      where: 'sura_number = ?',
+      whereArgs: [suraNumber],
+      orderBy: 'aya_number, word_position',
+    );
+    return fallback.map(QuranWord.fromMap).toList();
   }
 
-  /// البحث في القرآن (بسيط — يبحث في نص الآية)
+  // ═══════════════════════════════════════════════════════════
+  // getVerseWords
+  // ═══════════════════════════════════════════════════════════
+  Future<List<QuranWord>> getVerseWords(int suraNumber, int ayaNumber) async {
+    final db = await _getDb();
+
+    final rows = await db.query(
+      'words',
+      where: 'sura_number = ? AND aya_number = ?',
+      whereArgs: [suraNumber, ayaNumber],
+      orderBy: 'word_position',
+    );
+
+    if (rows.isNotEmpty) {
+      return rows.map(QuranWord.fromMap).toList();
+    }
+
+    // جلب السورة كاملة إن لم تكن في الـ cache
+    await getSuraWords(suraNumber);
+
+    final retry = await db.query(
+      'words',
+      where: 'sura_number = ? AND aya_number = ?',
+      whereArgs: [suraNumber, ayaNumber],
+      orderBy: 'word_position',
+    );
+    return retry.map(QuranWord.fromMap).toList();
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // searchText
+  // ═══════════════════════════════════════════════════════════
   Future<List<QuranWord>> searchText(String query) async {
     if (query.trim().isEmpty) return [];
-    final normalized = query.normalizeArabicFull();
-    final result = <QuranWord>[];
 
-    try {
-      for (int sura = 1; sura <= quran_lib.totalSurahCount; sura++) {
-        final verseCount = quran_lib.getVerseCount(sura);
-        for (int aya = 1; aya <= verseCount; aya++) {
-          final verseText =
-              quran_lib.getVerse(sura, aya, verseEndSymbol: false);
-          if (!verseText.contains(normalized) &&
-              !_removeArabicDiacritics(verseText).contains(normalized)) {
-            continue;
-          }
-          final words = verseText.trim().split(RegExp(r'\s+'));
-          final pageNum = quran_lib.getPageNumber(sura, aya);
-          for (int i = 0; i < words.length; i++) {
-            final word = words[i].trim();
-            if (word.isEmpty) continue;
-            final simple = _removeArabicDiacritics(word);
-            if (!simple.contains(normalized) && !word.contains(normalized)) {
-              continue;
-            }
-            result.add(QuranWord(
-              id: result.length + 1,
-              verseKey: '$sura:$aya',
-              suraNumber: sura,
-              ayaNumber: aya,
-              wordPosition: i,
-              textUthmani: word,
-              textSimple: simple,
-              pageNumber: pageNum,
-              lineNumber: 1,
-              isLastInAya: i == words.length - 1,
-            ));
-            if (result.length >= 100) return result;
-          }
-        }
-      }
-    } catch (e) {
-      if (kDebugMode) debugPrint('❌ searchText error: $e');
-    }
-    return result;
+    final normalized = query.normalizeArabicFull();
+    final db = await _getDb();
+
+    final rows = await db.rawQuery(
+      '''
+      SELECT * FROM words
+      WHERE text_uthmani LIKE ? OR text_simple LIKE ?
+      ORDER BY sura_number, aya_number, word_position
+      LIMIT 100
+      ''',
+      ['%$normalized%', '%$normalized%'],
+    );
+
+    return rows.map(QuranWord.fromMap).toList();
   }
 
-  // ═══════════════ إحصاءات ═══════════════
+  // ═══════════════════════════════════════════════════════════
+  // إحصاءات ومساعدات
+  // ═══════════════════════════════════════════════════════════
+  int get totalSurahs => _totalSuras;
+  int get totalPages => _totalPages;
 
-  int get totalSurahs => quran_lib.totalSurahCount;    // 114
-  int get totalVerses => quran_lib.totalVerseCount;    // 6236
-  int get totalPages => quran_lib.totalPagesCount;     // 604
+  /// هل الصفحة موجودة في الـ cache؟
+  Future<bool> isPageCached(int pageNumber) async {
+    final db = await _getDb();
+    return _isPageCached(db, pageNumber);
+  }
 
-  /// هل المكتبة جاهزة؟ (دائماً true — البيانات مُضمَّنة)
-  Future<bool> isPopulated() async => true;
+  /// عدد الصفحات المخزّنة مؤقتاً
+  Future<int> cachedPagesCount() async {
+    final db = await _getDb();
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as cnt FROM cached_pages',
+    );
+    return (result.first['cnt'] as int?) ?? 0;
+  }
 
-  /// لا يوجد شيء لإغلاقه (لا SQLite)
-  Future<void> close() async {}
-}
+  /// إلغاء الـ cache (لإعادة التحميل)
+  Future<void> clearCache() async {
+    final db = await _getDb();
+    await db.delete('words');
+    await db.delete('cached_pages');
+    await db.delete('cached_suras');
+    if (kDebugMode) debugPrint('🗑️ QuranDatabase cache cleared');
+  }
 
-// ─── دالة مساعدة: إزالة التشكيل ───
-String _removeArabicDiacritics(String text) {
-  return text.replaceAll(
-    RegExp(r'[\u064B-\u065F\u0670\u0610-\u061A\u06D6-\u06DC\u06DF-\u06E4\u06E7-\u06E8\u06EA-\u06ED]'),
-    '',
-  );
+  /// للتوافق مع الكود القديم
+  Future<bool> isPopulated() async {
+    final count = await cachedPagesCount();
+    return count > 0;
+  }
+
+  Future<void> close() async {
+    await _db?.close();
+    _db = null;
+  }
 }

@@ -1,6 +1,7 @@
 // lib/presentation/screens/home/home_screen.dart
 
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../theme/color.dart';
 import '../../../core/constants/quran_constants.dart';
 import '../../../data/local/db/app_database.dart';
@@ -233,11 +234,9 @@ class _WelcomeCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             'بِسۡمِ ٱللَّهِ ٱلرَّحۡمَٰنِ ٱلرَّحِيمِ',
-            style: TextStyle(
-              fontFamily: 'AmiriQuran',
-              fontFamilyFallback: ['Amiri', 'serif'],
+            style: GoogleFonts.amiriQuran(
               fontSize: 22,
               color: Colors.white,
               height: 2.0,

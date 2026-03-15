@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import '../theme/color.dart';
 import '../screens/recitation/recitation_state.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 // ═══════════════ Recording Pulse Button ═══════════════
 class RecordingPulseButton extends StatefulWidget {
@@ -305,8 +306,8 @@ class ErrorFeedbackBanner extends StatelessWidget {
                     const SizedBox(height: 3),
                     Text(
                       feedback!.expectedWord,
-                      style: const TextStyle(
-                        fontFamily: 'AmiriQuran',
+                      style: TextStyle(
+                        fontFamily: GoogleFonts.amiriQuran().fontFamily,
                         fontSize: 18,
                         color: AppColors.textQuran,
                         height: 1.8,

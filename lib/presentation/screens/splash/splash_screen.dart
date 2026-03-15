@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import '../../theme/color.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class SplashScreen extends StatefulWidget {
   final VoidCallback onComplete;
@@ -156,10 +157,9 @@ class _SplashScreenState extends State<SplashScreen>
               const SizedBox(height: 60),
 
               // بسم الله
-              const Text(
+              Text(
                 'بِسۡمِ ٱللَّهِ ٱلرَّحۡمَٰنِ ٱلرَّحِيمِ',
-                style: TextStyle(
-                  fontFamily: 'AmiriQuran',
+                style: GoogleFonts.amiriQuran(
                   fontSize: 22,
                   color: Colors.white38,
                   height: 2.0,

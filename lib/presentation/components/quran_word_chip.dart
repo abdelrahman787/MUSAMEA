@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import '../theme/color.dart';
 import '../screens/recitation/recitation_state.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class QuranWordChip extends StatefulWidget {
   final String word;
@@ -128,8 +129,7 @@ class _QuranWordChipState extends State<QuranWordChip>
       child: Text(
         widget.word,
         style: TextStyle(
-          fontFamily: 'AmiriQuran',
-          fontFamilyFallback: const ['Amiri', 'serif'],
+          fontFamily: GoogleFonts.amiriQuran().fontFamily,
           fontSize: widget.fontSize,
           color: Colors.transparent,
           height: 2.0,
@@ -161,8 +161,7 @@ class _QuranWordChipState extends State<QuranWordChip>
       child: Text(
         '؟',
         style: TextStyle(
-          fontFamily: 'AmiriQuran',
-          fontFamilyFallback: const ['Amiri', 'serif'],
+          fontFamily: GoogleFonts.amiriQuran().fontFamily,
           fontSize: widget.fontSize * 0.8,
           color: AppColors.primary,
           height: 2.0,
@@ -202,8 +201,7 @@ class _QuranWordChipState extends State<QuranWordChip>
       child: Text(
         widget.word,
         style: TextStyle(
-          fontFamily: 'AmiriQuran',
-          fontFamilyFallback: const ['Amiri', 'serif'],
+          fontFamily: GoogleFonts.amiriQuran().fontFamily,
           fontSize: widget.fontSize,
           color: textColor,
           height: 2.0,
@@ -223,8 +221,7 @@ class _QuranWordChipState extends State<QuranWordChip>
       child: Text(
         widget.word,
         style: TextStyle(
-          fontFamily: 'AmiriQuran',
-          fontFamilyFallback: const ['Amiri', 'serif'],
+          fontFamily: GoogleFonts.amiriQuran().fontFamily,
           fontSize: widget.fontSize,
           color: AppColors.wordHint.withValues(alpha: 0.5),
           height: 2.0,

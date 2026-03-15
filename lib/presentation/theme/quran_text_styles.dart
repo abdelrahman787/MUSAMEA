@@ -3,6 +3,7 @@
 
 import 'package:flutter/material.dart';
 import 'color.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 /// أنماط نص المصحف — تضمن عرض الخط على الويب وأندرويد
 class QuranTextStyles {
@@ -10,8 +11,8 @@ class QuranTextStyles {
   static const List<String> _quranFontFallback = ['Amiri', 'serif'];
 
   // ─── نص الكلمة القرآنية (الحجم الطبيعي) ───
-  static const TextStyle wordNormal = TextStyle(
-    fontFamily: 'AmiriQuran',
+  static TextStyle wordNormal = TextStyle(
+    fontFamily: GoogleFonts.amiriQuran().fontFamily,
     fontFamilyFallback: _quranFontFallback,
     fontSize: 22,
     height: 2.2,
@@ -19,8 +20,8 @@ class QuranTextStyles {
   );
 
   // ─── كلمة كبيرة (في شريط التسميع الرئيسي) ───
-  static const TextStyle wordLarge = TextStyle(
-    fontFamily: 'AmiriQuran',
+  static TextStyle wordLarge = TextStyle(
+    fontFamily: GoogleFonts.amiriQuran().fontFamily,
     fontFamilyFallback: _quranFontFallback,
     fontSize: 28,
     height: 2.4,
@@ -29,8 +30,8 @@ class QuranTextStyles {
   );
 
   // ─── كلمة صغيرة (للتلميحات والإحصاءات) ───
-  static const TextStyle wordSmall = TextStyle(
-    fontFamily: 'AmiriQuran',
+  static TextStyle wordSmall = TextStyle(
+    fontFamily: GoogleFonts.amiriQuran().fontFamily,
     fontFamilyFallback: _quranFontFallback,
     fontSize: 16,
     height: 2.0,
@@ -38,8 +39,8 @@ class QuranTextStyles {
   );
 
   // ─── رأس السورة / البسملة ───
-  static const TextStyle surahHeader = TextStyle(
-    fontFamily: 'AmiriQuran',
+  static TextStyle surahHeader = TextStyle(
+    fontFamily: GoogleFonts.amiriQuran().fontFamily,
     fontFamilyFallback: _quranFontFallback,
     fontSize: 24,
     height: 2.5,

@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import '../../theme/color.dart';
 import '../../../data/local/db/app_database.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -438,8 +439,8 @@ class _WeakWordCard extends StatelessWidget {
         ),
         title: Text(
           wordText,
-          style: const TextStyle(
-            fontFamily: 'AmiriQuran',
+          style: TextStyle(
+            fontFamily: GoogleFonts.amiriQuran().fontFamily,
             fontSize: 20,
             color: AppColors.textQuran,
             height: 1.8,

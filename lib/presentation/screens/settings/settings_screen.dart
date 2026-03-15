@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/color.dart';
 import '../../../core/constants/recitation_constants.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -151,7 +152,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         preview: Text(
                           'بِسۡمِ ٱللَّهِ',
                           style: TextStyle(
-                            fontFamily: 'AmiriQuran',
+                            fontFamily: GoogleFonts.amiriQuran().fontFamily,
                             fontSize: _fontSize,
                             color: AppColors.textQuran,
                             height: 2.0,

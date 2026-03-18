@@ -59,10 +59,24 @@ class RecitationViewModel extends ChangeNotifier {
     required int pageNumber,
     required RecitationMode mode,
   }) async {
+    // أظهر حالة التحميل فوراً
+    _setState(_state.copyWith(
+      isLoading: true,
+      loadingMessage: 'جاري تحميل الصفحة $pageNumber…',
+    ));
+    notifyListeners();
+
     try {
       // تحميل بيانات الصفحة
       final words = await _quranDb.getPageWords(pageNumber);
-      if (words.isEmpty) return;
+      if (words.isEmpty) {
+        _setState(_state.copyWith(
+          isLoading: false,
+          error: 'تعذّر تحميل بيانات الصفحة $pageNumber.\nتحقق من الاتصال بالإنترنت.',
+        ));
+        notifyListeners();
+        return;
+      }
 
       // بناء الصفحة
       final page = _buildPage(words, pageNumber);
@@ -117,6 +131,7 @@ class RecitationViewModel extends ChangeNotifier {
         sessionId: sessionId,
         mode: mode,
         isSessionStarted: true,
+        isLoading: false,
         currentWordIndex: 0,
         allWords: words,
         sessionStats: const SessionStats(),
@@ -130,8 +145,10 @@ class RecitationViewModel extends ChangeNotifier {
       await _startAudioRecording();
     } catch (e) {
       _setState(_state.copyWith(
+        isLoading: false,
         error: 'خطأ في بدء الجلسة: $e',
       ));
+      notifyListeners();
       if (kDebugMode) debugPrint('❌ startSession error: $e');
     }
   }

@@ -204,39 +204,68 @@ class _MushafArea extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final page = state.currentPage;
-    if (page == null) {
+
+    // ─── حالة التحميل ───────────────────────────────
+    if (state.isLoading) {
       return Container(
-        decoration: const BoxDecoration(
-          gradient: AppColors.mushafahBackground,
-        ),
-        child: const Center(
+        decoration: const BoxDecoration(gradient: AppColors.mushafahBackground),
+        child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(
-                color: AppColors.primary,
-                strokeWidth: 3,
-              ),
-              SizedBox(height: 16),
+              const CircularProgressIndicator(color: AppColors.primary, strokeWidth: 3),
+              const SizedBox(height: 16),
               Text(
-                'جاري تحميل الصفحة…',
-                style: TextStyle(
-                  fontFamily: 'Amiri',
-                  fontSize: 18,
-                  color: AppColors.primary,
+                state.loadingMessage ?? 'جاري تحميل الصفحة…',
+                style: const TextStyle(
+                  fontFamily: 'Amiri', fontSize: 18, color: AppColors.primary,
                 ),
               ),
-              SizedBox(height: 8),
-              Text(
+              const SizedBox(height: 8),
+              const Text(
                 'يتم جلب البيانات من الخادم',
                 style: TextStyle(
-                  fontFamily: 'Amiri',
-                  fontSize: 13,
-                  color: AppColors.textHint,
+                  fontFamily: 'Amiri', fontSize: 13, color: AppColors.textHint,
                 ),
               ),
             ],
           ),
+        ),
+      );
+    }
+
+    // ─── حالة الخطأ ──────────────────────────────────
+    if (state.error != null && page == null) {
+      return Container(
+        decoration: const BoxDecoration(gradient: AppColors.mushafahBackground),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.wifi_off_rounded, size: 56, color: AppColors.statError),
+                const SizedBox(height: 16),
+                Text(
+                  state.error!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontFamily: 'Amiri', fontSize: 16, color: AppColors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // ─── لا شيء بعد ──────────────────────────────────
+    if (page == null) {
+      return Container(
+        decoration: const BoxDecoration(gradient: AppColors.mushafahBackground),
+        child: const Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
         ),
       );
     }

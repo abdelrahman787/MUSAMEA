@@ -52,6 +52,8 @@ class RecitationUiState {
   final SessionStats sessionStats;
   final bool isSessionComplete;
   final bool isSessionStarted;
+  final bool isLoading;        // true أثناء تحميل بيانات الصفحة من API
+  final String? loadingMessage;// رسالة التحميل
   final String? error;
   final int currentWordIndex;
   final List<QuranWord> allWords;
@@ -68,6 +70,8 @@ class RecitationUiState {
     this.sessionStats = const SessionStats(),
     this.isSessionComplete = false,
     this.isSessionStarted = false,
+    this.isLoading = false,
+    this.loadingMessage,
     this.error,
     this.currentWordIndex = 0,
     this.allWords = const [],
@@ -102,6 +106,8 @@ class RecitationUiState {
     SessionStats? sessionStats,
     bool? isSessionComplete,
     bool? isSessionStarted,
+    bool? isLoading,
+    String? loadingMessage,
     String? error,
     bool clearError = false,
     int? currentWordIndex,
@@ -119,6 +125,8 @@ class RecitationUiState {
       sessionStats: sessionStats ?? this.sessionStats,
       isSessionComplete: isSessionComplete ?? this.isSessionComplete,
       isSessionStarted: isSessionStarted ?? this.isSessionStarted,
+      isLoading: isLoading ?? this.isLoading,
+      loadingMessage: loadingMessage ?? this.loadingMessage,
       error: clearError ? null : (error ?? this.error),
       currentWordIndex: currentWordIndex ?? this.currentWordIndex,
       allWords: allWords ?? this.allWords,
